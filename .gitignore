@@ -1,0 +1,12 @@
+# Ignore local data
+chroma_data/
+ollama_data/
+knowledge/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# System files
+.DS_Store
