@@ -5,3 +5,4 @@ langchain-ollama
 langchain-chroma
 langchain-community
 pypdf
+rank_bm25

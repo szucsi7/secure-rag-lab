@@ -6,6 +6,14 @@ services:
       - ./ollama_data:/root/.ollama
     ports:
       - "11435:11434"
+    # Nvidia GPU Config
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   ollama-pull-model:
     image: curlimages/curl:latest
@@ -36,6 +44,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama-architect:11434
       - CHROMA_HOST=chromadb-architect
+      - ALLOW_RESET=TRUE
 
 volumes:
   chroma_persistence:

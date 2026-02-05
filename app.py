@@ -1,6 +1,7 @@
 import streamlit as st
 import ollama
 import os
+import shutil
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
@@ -70,8 +71,10 @@ def sync_knowledge_base(vector_db):
     return []
 
 # --- 4. INITIALIZE APP ---
-vectorstore = get_vectorstore()
-newly_added = sync_knowledge_base(vectorstore)
+# check vectorstore state, initialize it on reindexing
+if "vectorstore" not in st.session_state or st.session_state.vectorstore is None:
+    st.session_state.vectorstore = get_vectorstore()
+newly_added = sync_knowledge_base(st.session_state.vectorstore)
 
 # Sidebar UI
 with st.sidebar:
@@ -89,7 +92,7 @@ with st.sidebar:
         st.info("Database synchronized.")
 
     if st.button("List Loaded Files"):
-        data = vectorstore.get()
+        data = st.session_state.vectorstore.get()
         st.write(f"Total Chunks in DB: {len(data['ids'])}")
         
         # List all unique source files found in the DB
@@ -99,8 +102,17 @@ with st.sidebar:
             st.write(s)
         
     if st.button("🔥 Purge & Re-index"):
-        os.system(f"rm -rf {PERSIST_DIR}/*")
-        st.rerun()
+        try:
+            client = st.session_state.vectorstore._client
+            client.reset()
+            
+            st.cache_resource.clear()
+            st.session_state.vectorstore = None
+            
+            st.success("Database Reset Successfully! Reloading...")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Purge failed: {e}")
 
 
 # --- 5. SECURITY LAYERS (The Bouncer) ---
@@ -124,7 +136,7 @@ if query:
     if user_role != "Admin":
         search_kwargs["filter"] = {"security_level": "low"}
     
-    results = vectorstore.similarity_search(query, **search_kwargs)
+    results = st.session_state.vectorstore.similarity_search(query, **search_kwargs)
     
     if not results:
         st.error("Access Denied or No Information Found.")
