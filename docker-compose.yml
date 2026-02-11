@@ -6,6 +6,11 @@ services:
       - ./ollama_data:/root/.ollama
     ports:
       - "11435:11434"
+    healthcheck:
+      test: "ollama list || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 5
     # Nvidia GPU Config
     deploy:
       resources:
@@ -19,32 +24,31 @@ services:
     image: curlimages/curl:latest
     container_name: ollama-pull-model
     depends_on:
-      - ollama-architect
-    entrypoint: [ "sh", "-c", "sleep 5 && curl -X POST http://ollama-architect:11434/api/pull -d '{\"model\": \"llama3\"}'" ]
-
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: chromadb-architect
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_persistence:/chroma/data
+      ollama-architect:
+        condition: service_healthy
+    entrypoint:
+      - "sh"
+      - "-c"
+      - |
+        echo "Pulling Llama3..."
+        curl -X POST http://ollama-architect:11434/api/pull -d '{"model": "llama3"}'
+        echo "Models ready."
 
   app:
     build: .
     container_name: vulnerable-rag-app
+    user: "1000:1000"  # <--- Use your UID:GID here
     volumes:
       - .:/app
-      - chroma_persistence:/app/chroma_data
+      - ./chroma_data:/app/chroma_data
     depends_on:
-      - ollama-architect
-      - chromadb
+      ollama-architect:
+        condition: service_healthy
+      ollama-pull-model:
+        condition: service_completed_successfully
     ports:
       - "8501:8501"
     environment:
       - OLLAMA_HOST=http://ollama-architect:11434
-      - CHROMA_HOST=chromadb-architect
       - ALLOW_RESET=TRUE
-
-volumes:
-  chroma_persistence:
+      - PYTHONUNBUFFERED=1

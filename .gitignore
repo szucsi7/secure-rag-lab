@@ -2,6 +2,8 @@
 chroma_data/
 ollama_data/
 knowledge/
+knowledge_stash/
+prompts/
 
 # Python
 __pycache__/
@@ -10,3 +12,6 @@ __pycache__/
 
 # System files
 .DS_Store
+
+# Agent
+ARCHITECTURE.md
