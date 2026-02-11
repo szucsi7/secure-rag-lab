@@ -1,9 +1,14 @@
 # Ignore local data
-chroma_data/
-ollama_data/
-knowledge/
+knowledge/*
+ollama_data/*
+chroma_data/*
 knowledge_stash/
 prompts/
+
+# Keep the folders for ease of use
+!knowledge/.gitkeep
+!ollama_data/.gitkeep
+!chroma_data/.gitkeep
 
 # Python
 __pycache__/
