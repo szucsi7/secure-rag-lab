@@ -8,9 +8,9 @@ services:
       - "11435:11434"
     healthcheck:
       test: "ollama list || exit 1"
-      interval: 10s
+      interval: 2s
       timeout: 5s
-      retries: 5
+      retries: 10
     # Nvidia GPU Config
     deploy:
       resources:

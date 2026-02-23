@@ -9,6 +9,8 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain.retrievers.ensemble import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
 
 # --- 1. CONFIGURATION & DOMAIN OBJECTS ---
 
@@ -55,8 +57,6 @@ class KnowledgeBase:
         """Purges the database."""
         try:
             # Chroma client reset
-            # Accessing private client as per original implementation pattern
-            # In production, might prefer deleting the persist dir, but respecting original logic:
             self.vectorstore._client.reset()
             self._vectorstore = None
         except Exception as e:
@@ -108,13 +108,13 @@ class KnowledgeBase:
                     loader = TextLoader(file_path, autodetect_encoding=True)
                 
                 loaded = loader.load()
-                # Metadata Tagging
+                # Metadata tagging, very basic security flagging by filename
                 is_sensitive = any(keyword in file_path.lower() for keyword in ["financial", "secret"])
                 for d in loaded:
                     d.metadata['security_level'] = SecurityLevel.HIGH if is_sensitive else SecurityLevel.LOW
                 docs.extend(loaded)
             except Exception as e:
-                # In a real app, use proper logging
+                # TODO add logging
                 st.sidebar.error(f"❌ Error loading {os.path.basename(file_path)}: {e}")
         return docs
 
@@ -125,6 +125,40 @@ class KnowledgeBase:
         )
         chunks = splitter.split_documents(docs)
         self.vectorstore.add_documents(chunks)
+
+    def get_ensemble_retriever(self, user_role: str):
+
+        is_admin = (user_role == "Admin")
+        
+        # 1. Setup Semantic Retriever
+        search_kwargs = {"k": 3}
+        if not is_admin:
+            search_kwargs["filter"] = {"security_level": SecurityLevel.LOW}
+        
+        chroma_retriever = self.vectorstore.as_retriever(search_kwargs=search_kwargs)
+
+        # 2. Setup Keyword Retriever (Filtered)
+        db_data = self.vectorstore.get()
+        
+        # Use a list comprehension for the RBAC check
+        filtered_docs = [
+            Document(page_content=doc, metadata=meta)
+            for doc, meta in zip(db_data['documents'], db_data['metadatas'])
+            if is_admin or meta.get("security_level") == SecurityLevel.LOW
+        ]
+
+        # Guard Clause: Fallback to Chroma only if no docs are accessible
+        if not filtered_docs:
+            return chroma_retriever
+
+        bm25_retriever = BM25Retriever.from_documents(filtered_docs)
+        bm25_retriever.k = 3
+
+        # 3. Combine into Ensemble
+        return EnsembleRetriever(
+            retrievers=[chroma_retriever, bm25_retriever],
+            weights=[0.4, 0.6]
+        )
 
 class SecurityAgent:
     """The 'Bouncer': Handles output validation and safety checks."""
@@ -161,11 +195,8 @@ class RAGEngine:
         Returns a dict containing the raw response, context, and safety status.
         """
         # 1. Retrieval
-        search_kwargs = {"k": 3}
-        if user_role != "Admin":
-            search_kwargs["filter"] = {"security_level": SecurityLevel.LOW}
-        
-        results = self.kb.vectorstore.similarity_search(user_query, **search_kwargs)
+        retriever = self.kb.get_ensemble_retriever(user_role)
+        results = retriever.invoke(user_query)
         
         if not results:
             return {"found": False, "message": "Access Denied or No Information Found."}
@@ -263,7 +294,6 @@ def render_main(rag: RAGEngine, bouncer: SecurityAgent, role: str):
                 st.divider()
 
 # --- 4. APPLICATION ENTRY POINT ---
-
 def main():
     config = AppConfig()
     st.set_page_config(page_title=config.PAGE_TITLE, layout="wide")
@@ -271,7 +301,6 @@ def main():
 
     # Dependency Injection
     # We use st.cache_resource for the KnowledgeBase to persist the connection across re-runs
-    # but the class itself is lightweight wrapper around the cached vectorstore
     
     kb = KnowledgeBase(config)
     bouncer = SecurityAgent(config)
