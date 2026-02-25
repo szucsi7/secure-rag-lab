@@ -36,8 +36,8 @@ services:
 
   app:
     build: .
-    container_name: vulnerable-rag-app
-    user: "1000:1000"  # <--- Use your UID:GID here
+    container_name: secure-rag-lab
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - .:/app
       - ./chroma_data:/app/chroma_data
