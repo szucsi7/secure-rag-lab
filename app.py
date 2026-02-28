@@ -162,9 +162,19 @@ class KnowledgeBase:
 
 class SecurityAgent:
     """The 'Bouncer': Handles output validation and safety checks."""
-    
+
     def __init__(self, config: AppConfig):
         self.model = config.GENERATION_MODEL
+        # Specific "No-Go" zones for the corporate context
+        self.forbidden_topics = ["payroll", "bankruptcy", "internal passwords", "root admin"]
+
+    def is_query_safe(self, user_query: str) -> bool:
+        """PRE-FILTER: Checks intent"""
+        # Keyword check
+        if any(term in user_query.lower() for term in self.forbidden_topics):
+            print(f"🚩 Input Bouncer: Forbidden topic detected in query.")
+            return False
+        return True
 
     def is_response_safe(self, user_query: str, ai_response: str) -> bool:
         """Uses an LLM to audit the response."""
@@ -271,22 +281,29 @@ def render_main(rag: RAGEngine, bouncer: SecurityAgent, role: str):
     query = st.text_input("Ask the Corporate Assistant:")
     
     if query:
+        # 1. INPUT BOUNCER CHECK
+        if not bouncer.is_query_safe(query):
+            st.error("🚨 SECURITY ALERT: Input blocked by Security Agent.")
+            st.warning("Your query contains forbidden topics (Payroll, Admin, etc.) and has been logged.")
+            return
+
         with st.spinner("Analyzing knowledge base..."):
+            # 2. RAG PIPELINE
             result = rag.query(query, role)
 
-        if not result["found"]:
-            st.error(result["message"])
+        if not result.get("found"):
+            st.error(result.get("message", "No Information Found."))
             return
 
         raw_response = result["raw_response"]
         
-        # The Bouncer Check
+        # 3. OUTPUT BOUNCER CHECK
         if bouncer.is_response_safe(query, raw_response):
             st.subheader("Assistant Response:")
             st.write(raw_response)
         else:
             st.error("🚨 SECURITY ALERT: The Bouncer blocked a suspicious response.")
-            st.info("The model attempted to discuss restricted financial status or secrets.")
+            st.info("The model attempted to discuss restricted information.")
 
         # Audit Log
         with st.expander("🔍 Audit Log"):
