@@ -126,9 +126,10 @@ class KnowledgeBase:
         chunks = splitter.split_documents(docs)
         self.vectorstore.add_documents(chunks)
 
-    def get_ensemble_retriever(self, user_role: str):
+    def get_ensemble_retriever(self, user_role: str, is_hardened: bool = True):
 
-        is_admin = (user_role == "Admin")
+        # Bypass admin check if not hardened
+        is_admin = True if not is_hardened else (user_role == "Admin")
         
         # 1. Setup Semantic Retriever
         search_kwargs = {"k": 3}
@@ -175,7 +176,7 @@ class SecurityAgent:
             print(f"🚩 Input Bouncer: Forbidden topic detected in query.")
             return False
         
-        # B. Semantic Intent Check
+        # B Semantic Intent Check
         gatekeeper_prompt = f"""
         [SYSTEM] You are a Security Auditor. Respond ONLY with 'SAFE' or 'UNSAFE'.
         [QUERY] {user_query}
@@ -214,13 +215,13 @@ class RAGEngine:
         self.kb = knowledge_base
         self.config = config
 
-    def query(self, user_query: str, user_role: str) -> Dict[str, Any]:
+    def query(self, user_query: str, user_role: str, is_hardened: bool = True) -> Dict[str, Any]:
         """
         Executes the RAG pipeline.
         Returns a dict containing the raw response, context, and safety status.
         """
         # 1. Retrieval
-        retriever = self.kb.get_ensemble_retriever(user_role)
+        retriever = self.kb.get_ensemble_retriever(user_role, is_hardened)
         results = retriever.invoke(user_query)
         
         if not results:
@@ -264,6 +265,14 @@ def render_sidebar(kb: KnowledgeBase):
         role = st.selectbox("Identity Profile:", ["Employee", "Admin"])
         
         st.divider()
+        st.subheader("🛡️ Security Mode")
+        is_hardened = st.toggle("Enable Hardened Mode", value=True)
+        if is_hardened:
+            st.success("Protections: ON (Bouncers & RBAC Active)")
+        else:
+            st.error("Protections: OFF (Vulnerable Mode)")
+
+        st.divider()
         st.subheader("📊 Database Stats")
         
         # Show sync result from session
@@ -290,21 +299,21 @@ def render_sidebar(kb: KnowledgeBase):
             except Exception as e:
                 st.error(f"Purge failed: {e}")
                 
-        return role
+        return role, is_hardened
 
-def render_main(rag: RAGEngine, bouncer: SecurityAgent, role: str):
+def render_main(rag: RAGEngine, bouncer: SecurityAgent, role: str, is_hardened: bool):
     query = st.text_input("Ask the Corporate Assistant:")
     
     if query:
         # 1. INPUT BOUNCER CHECK
-        if not bouncer.is_query_safe(query):
+        if is_hardened and not bouncer.is_query_safe(query):
             st.error("🚨 SECURITY ALERT: Input blocked by Security Agent.")
             st.warning("Your query contains forbidden topics (Payroll, Admin, etc.) and has been logged.")
             return
 
         with st.spinner("Analyzing knowledge base..."):
             # 2. RAG PIPELINE
-            result = rag.query(query, role)
+            result = rag.query(query, role, is_hardened)
 
         if not result.get("found"):
             st.error(result.get("message", "No Information Found."))
@@ -312,13 +321,17 @@ def render_main(rag: RAGEngine, bouncer: SecurityAgent, role: str):
 
         raw_response = result["raw_response"]
         
-        # 3. OUTPUT BOUNCER CHECK
-        if bouncer.is_response_safe(query, raw_response):
-            st.subheader("Assistant Response:")
-            st.write(raw_response)
+        if is_hardened:
+            # 3. OUTPUT BOUNCER CHECK
+            if bouncer.is_response_safe(query, raw_response):
+                st.subheader("Assistant Response:")
+                st.write(raw_response)
+            else:
+                st.error("🚨 SECURITY ALERT: The Bouncer blocked a suspicious response.")
+                st.info("The model attempted to discuss restricted information.")
         else:
-            st.error("🚨 SECURITY ALERT: The Bouncer blocked a suspicious response.")
-            st.info("The model attempted to discuss restricted information.")
+            st.subheader("Assistant Response (Vulnerable Mode):")
+            st.write(raw_response)
 
         # Audit Log
         with st.expander("🔍 Audit Log"):
@@ -345,8 +358,8 @@ def main():
 
     initialize_session(kb)
     
-    user_role = render_sidebar(kb)
-    render_main(rag, bouncer, user_role)
+    user_role, is_hardened = render_sidebar(kb)
+    render_main(rag, bouncer, user_role, is_hardened)
 
 if __name__ == "__main__":
     main()
