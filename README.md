@@ -28,4 +28,9 @@ This lab demonstrates a **Defense-in-Depth** architecture for Retrieval-Augmente
                             it will automatically pull the Llama3 model (approx. 5GB)
 3. **Access UI:** navigate to url: http://localhost:8501/
 4. **Ingestion:** simply drop .txt or .pdf files into the ./knowledge folder
-                they will be synchronized automatically on the next app load              
+                they will be synchronized automatically on the next app load
+
+## License & Commercial Use
+This project is open-source under the **GPLv3 License** for personal and non-commercial educational use. 
+
+If you represent a commercial entity or enterprise seeking to incorporate, bundle, or modify this lab for paid offerings, a **commercial license** is required. Please reach out to `rob.suciaghi@gmail.com` for licensing inquiries and custom integration partnerships.
